@@ -47,3 +47,9 @@ options:
                         --lint
 
 ```
+
+## Related
+
+This fixes some bad YAML output in the fish_history file, which prevented me from sorting multiple fish_history files easily to merge them into one.
+
+See this issue related to some old fish yaml syntax errors: https://github.com/fish-shell/fish-shell/issues/2759
