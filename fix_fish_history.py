@@ -4,10 +4,11 @@
     Unparseable YAML and unsorted history is detected and fixed.
     The output should be a valid YAML file.
 """
+import argparse
 import logging
 import re
 import sys
-from typing import List, Tuple
+from typing import Tuple
 
 import yaml
 
@@ -18,6 +19,39 @@ formatter = logging.Formatter("[%(levelname)s] %(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument(
+    "--run-pytests",
+    action="store_true",
+    help="Just run the unit tests for this script if pytest is installed."
+)
+parser.add_argument(
+    "--lint",
+    action="store_true",
+    help="Just count the number of fixes, do not actually fix them. "
+    "This includes number of unsorted history entries and number of YAML parse errors found.",
+)
+parser.add_argument(
+    "--verbose",
+    action="store_true",
+    help="Enable debug logging. This shows YAML parse error details.",
+)
+parser.add_argument(
+    "--nosort", action="store_true", help="Do not sort lines in the history file"
+)
+parser.add_argument(
+    "--noparsefix", action="store_true", help="Do not try to fix parse errors"
+)
+parser.add_argument(
+    "fish_history_files", nargs="+", help="The fish_history file to fix"
+)
+parser.add_argument(
+    "--append", "-a", action="store_true", help="Append to the output filename --out-fname do not overwrite"
+)
+parser.add_argument(
+    "--out-fname", "-o", default=None, help="Write fixed output to this file. Incompatible with --lint"
+)
 
 CMD_REGEX = re.compile("^- *cmd: *(.*)$")
 # Assuming paths always start with 4 spaces
@@ -78,7 +112,7 @@ def fix_unparseable_fish_history(history_str: str) -> Tuple[str, int]:
     """Attempt to fix unparseable yaml lines from a fish_history file."""
     lines = []
     fixed = 0
-    history_lines = history_str.split('\n')
+    history_lines = history_str.split("\n")
     for line_num, line in enumerate(history_lines):
         is_cmd = re.match(CMD_REGEX, line)
         is_path = re.match(PATH_LIST_REGEX, line)
@@ -101,7 +135,11 @@ def sort_fish_history(history_str: str, count_differences=True) -> Tuple[str, in
     History lines will be sorted oldest to newest by the 'when' key.
     """
     fixed = -1
-    key = lambda obj: obj.get("when", 0)
+
+    def key(obj):
+        """Sort by 'when' key."""
+        return obj.get("when", 0)
+
     history_obj = yaml.safe_load(history_str)
     if not count_differences:
         history_obj.sort(key=key)
@@ -117,18 +155,52 @@ def sort_fish_history(history_str: str, count_differences=True) -> Tuple[str, in
 
 def main():
     """Run this script with the given command line arguments."""
-    # TODO OPTIONS:
-    # lint vs fix
-    # multiple files: lint all or fix all or just count fix Ns and do not fix
-    # lint: just count the # of fixes and maybe line numbers
-    # DEBUG logging
-    # exclude a fix: nosort or nofixbad
-    # fix config: nofixbad or erasepossiblybad
-    filename = sys.argv[1]
-    with open(filename, encoding="utf-8") as filehandle:
-        fixed, fixed_count = fix_unparseable_fish_history(filehandle.read())
-        print(fixed)
-        logger.info("Fixed %s possibly unparseable yaml lines", fixed_count)
+    if '--run-pytests' in sys.argv:
+        sys.argv.remove('--run-pytests')
+        import pytest
+        pytest.main([__file__,  '--verbose'])
+        return
+
+    args = parser.parse_args()
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+    logger.debug("Arguments: %s", args)
+
+    lint = args.lint and args.out_fname is None
+    all_files = []
+    # This should have unit tests to match the theme of this script.
+    for fname in args.fish_history_files:
+        logger.info("%s", fname)
+        if fname == "-":
+            history_str = sys.stdin.read()
+        else:
+            with open(fname, encoding="utf-8") as fhandle:
+                history_str = fhandle.read()
+        if not args.noparsefix:
+            history_str, badparse_count = fix_unparseable_fish_history(history_str)
+            logger.info("%s lines are unparseable YAML", badparse_count)
+        if not lint:
+            all_files.append(history_str)
+        if lint and not args.nosort:
+            history_str, sort_count = fix_unparseable_fish_history(history_str)
+            logger.info(
+                "%s lines are not in order by date (the 'when' field)", sort_count
+            )
+
+    if not lint:
+        if not args.nosort:
+            history_str, sort_count = fix_unparseable_fish_history("\n".join(all_files))
+            logger.info(
+                "%s lines are not in order by date (the 'when' field)", sort_count
+            )
+        else:
+            history_str = "\n".join(all_files)
+        if args.out_fname:
+            out_filemode = 'a' if args.append else 'w'
+            with open(args.out_fname, out_filemode) as outfile:
+                outfile.write(history_str)
+        else:
+            print(history_str)
 
 
 try:
@@ -198,4 +270,5 @@ if pytest:
 
 
 if __name__ == "__main__":
+    # Run tests with pytest [filename]
     main()
