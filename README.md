@@ -1,5 +1,15 @@
 # fix_fish_history.py
 
+Running this fixer on a fish_history file converts it into valid YAML.
+This makes it easy to run any standard YAML parser on the output.
+
+For example, this allows easily querying or sorting the YAML output.
+
+No guarantee that fish can read the transformed YAML.
+(TODO) In this case, this script should log and remove the unparseable lines instead of attempting to fix them.
+
+(TODO) Does not work with DOS `\r\n` newlines yet.
+
 ## Fix some unparseable YAML lines and sort history
 
 ```bash
